@@ -39,6 +39,52 @@
 <!-- The path a submission takes, from arriving to the label a reader sees.
      Six or seven steps — this is the trace you wrote in Milestone 1. -->
 
+**In one line:** text comes in → rate limit check → gets an id → two signals
+score it → scores combined into one → turned into a label → saved to the log
+and sent back.
+
+1. **The text arrives — `app.py::submit`.** Someone sends JSON to
+   `POST /submit`: `{"text": "...", "creator_id": "..."}`. The route reads it
+   with `request.get_json(silent=True)`, so a broken body becomes an empty
+   dict instead of a crash.
+2. **The rate limiter checks it — `app.py::rate_limit_key`** (unit 8, off until
+   `RATE_LIMITING_ENABLED` is on in `config.py`). It counts requests per
+   `creator_id`, or per IP address if there isn't one. The limits are 10 a
+   minute and 200 a day. Anyone over the limit gets a 429 error, and
+   `audit.log_rejection` still writes a line, so a flood of blocked requests
+   leaves a record.
+3. **The route checks the text and gives it an id.** Missing, empty, or very
+   long `text` is refused here with a clear error. Otherwise it gets a
+   `content_id` from `uuid.uuid4()`. That's the id the writer uses later to
+   appeal.
+4. **Two signals score it, separately.** Each gives a number from 0 to 1, where
+   higher means more likely AI.
+   - `detector.py::model_signal` → `model_score`. It runs gpt2 on the first
+     400 tokens, finds the perplexity (how surprised the model is), and squashes
+     it so that a perplexity of 45 scores 0.5. Lower perplexity means a higher
+     score. Text under 3 tokens raises a `ValueError`, so the route has to
+     catch that.
+   - `stylometry.py::style_signal` → `style_score`. It's built from
+     `sentence_length_spread`, `type_token_ratio` (unique words ÷ total words)
+     and `punctuation_density`. Text that's more even scores higher.
+5. **The two scores become one — `scoring.py::combine_signals`.** It mixes
+   `model_score` and `style_score` into one `combined_score`. The starting rule
+   is a 50/50 weighted average (`WEIGHT_MODEL_SIGNAL` and `WEIGHT_STYLE_SIGNAL`
+   in `config.py`). This is where I decide what happens when the signals
+   disagree.
+6. **The score becomes a label — `scoring.py::score_to_label`.** It returns
+   `(guess, label_text)`. A score of 0.35 or below (`HUMAN_THRESHOLD`) gives
+   `human`, 0.65 or above (`AI_THRESHOLD`) gives `ai`, and anything between
+   gives `unsure`. The `label_text` is a plain sentence a person can understand,
+   like "We think this was probably written by a person."
+7. **It's saved, then sent back — `audit.py::log_decision`.** One line is added
+   to `logs/audit.jsonl` with the timestamp, `content_id`, `creator_id`,
+   `guess`, `model_score`, `style_score`, `combined_score`, `label` and
+   `status: "decided"`. The response returns the same fields, including both
+   signal scores, which unit 8's `run_attacks.py` reads. If the writer thinks
+   the label is wrong, `POST /appeal` checks the id with `audit.entries_for`,
+   then `audit.log_appeal` adds a new line marking it `under_review`. The
+   original decision is never deleted.
 
 
 ---
