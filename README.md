@@ -53,19 +53,47 @@
 
 ### Signal one — the model signal
 
-**What it measures:**
+`detector.py::model_signal`, given to me.
 
-**Why that might differ between human and AI writing:**
+**What it measures:** How predictable the text is: its perplexity under gpt2,
+a small language model running locally. Low perplexity means the model could
+have guessed each next word. It's squashed to 0–1, with higher meaning more
+likely AI.
 
-**What it can't see:**
+**Why that might differ between human and AI writing:** A language model
+writes by picking a likely next word over and over, so its output is text
+another model finds easy to predict. People wander more: odd word choices,
+sudden turns, specific details instead of typical ones.
+
+**What it can't see:** Predictable isn't the same as machine-written. It
+really rewards common words in short, plain sentences, and plenty of people
+write that way: someone writing in a second language and sticking to words
+they're sure of, a younger writer, anyone writing simply on purpose. Their
+real writing can score as machine-like as AI text. It fails the other way too:
+AI text full of rare or fancy words scores as human, because rare words are
+exactly what gpt2 can't predict. The people it's most likely to wrongly accuse
+are the ones with the least room to argue back.
 
 ### Signal two — the style signal
 
-**What it measures:**
+`stylometry.py::style_signal`, which I build.
 
-**Why that might differ between human and AI writing:**
+**What it measures:** The shape of the text, without reading it. It looks at
+how much sentence lengths vary, how varied the vocabulary is (unique words ÷
+total words), and how much and what kind of punctuation there is.
 
-**What it can't see:**
+**Why that might differ between human and AI writing:** Generated prose tends
+to be even: mid-length sentences one after another, a narrower band of
+vocabulary, safe punctuation, because "most likely next word" averages
+everything out. Human writing is lumpier: a three-word sentence next to a
+forty-word one, the odd semicolon or dash.
+
+**What it can't see:** Meaning. It has no idea what the text says, so anything
+that changes the shape without changing the substance moves it. Adding typos,
+chopping sentences up or gluing them together, or pasting in a quotation can
+make AI text look human, and it costs someone almost nothing to do on purpose.
+Vocabulary variety also drops as text gets longer, so a long and a short text
+aren't fairly comparable on it.
 
 ### The combining rule
 
